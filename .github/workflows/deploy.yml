@@ -1,89 +1,31 @@
-name: Deploy to AWS EC2
+script: |
+  set -e
+  docker pull ${{ secrets.DOCKERHUB_USERNAME }}/flask-cicd-app:${{ github.sha }}
 
-on:
-  push:
-    branches:
-      - main
+  mkdir -p ~/deploy
+  cd ~/deploy
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  cat > docker-compose.yml <<EOF
+  version: "3.9"
+  services:
+    app:
+      image: ${{ secrets.DOCKERHUB_USERNAME }}/flask-cicd-app:${{ github.sha }}
+      container_name: flask_app
+      restart: always
+      environment:
+        - ENV=prod
+        - APP_VERSION=${{ github.sha }}
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set version
-        run: echo "APP_VERSION=${GITHUB_SHA}" >> $GITHUB_ENV
-
-      - name: Login DockerHub
-        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-
-      - name: Build and push app image
-        run: |
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/flask-cicd-app:${GITHUB_SHA} ./app
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/flask-cicd-app:${GITHUB_SHA}
-
-      - name: Deploy on EC2 via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          script: |
-            set -e
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/flask-cicd-app:${GITHUB_SHA}
-
-            mkdir -p ~/deploy
-            cd ~/deploy
-
-            cat > docker-compose.yml <<EOF
-            version: "3.9"
-            services:
-              app:
-                image: ${{ secrets.DOCKERHUB_USERNAME }}/flask-cicd-app:${GITHUB_SHA}
-                container_name: flask_app
-                restart: always
-                environment:
-                  - ENV=prod
-                  - APP_VERSION=${GITHUB_SHA}
-
-              nginx:
-                image: nginx:alpine
-                container_name: nginx_proxy
-                restart: always
-                ports:
-                  - "80:80"
-                depends_on:
-                  - app
-                volumes:
-                  - ./nginx.conf:/etc/nginx/nginx.conf:ro
-            EOF
-
-            cat > nginx.conf <<EOF
-            events {}
-            http {
-              server {
-                listen 80;
-
-                location / {
-                  proxy_pass http://app:5000;
-                  proxy_set_header Host \$host;
-                  proxy_set_header X-Real-IP \$remote_addr;
-                }
-
-                location /health {
-                  proxy_pass http://app:5000/health;
-                }
-
-                location /version {
-                  proxy_pass http://app:5000/version;
-                }
-              }
-            }
-            EOF
-
-            docker compose down || true
-            docker compose up -d
-            docker ps
+    nginx:
+      image: nginx:alpine
+      container_name: nginx_proxy
+      restart: always
+      ports:
+        - "80:80"
+      depends_on:
+        - app
+      volumes:
+        - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  EOF
+  ...
 
