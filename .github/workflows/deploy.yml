@@ -2,7 +2,8 @@ name: Deploy to AWS EC2
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
 
 jobs:
   deploy:
@@ -30,7 +31,9 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
+            set -e
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/flask-cicd-app:${GITHUB_SHA}
+
             mkdir -p ~/deploy
             cd ~/deploy
 
@@ -62,14 +65,17 @@ jobs:
             http {
               server {
                 listen 80;
+
                 location / {
                   proxy_pass http://app:5000;
-                  proxy_set_header Host \\$host;
-                  proxy_set_header X-Real-IP \\$remote_addr;
+                  proxy_set_header Host \$host;
+                  proxy_set_header X-Real-IP \$remote_addr;
                 }
+
                 location /health {
                   proxy_pass http://app:5000/health;
                 }
+
                 location /version {
                   proxy_pass http://app:5000/version;
                 }
@@ -79,4 +85,5 @@ jobs:
 
             docker compose down || true
             docker compose up -d
+            docker ps
 
